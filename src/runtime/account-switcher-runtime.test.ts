@@ -337,6 +337,56 @@ describe("AccountSwitcherRuntime", () => {
   });
 
   describe("onModelSelect", () => {
+    it("prefers the longest directory match among accounts for the selected provider", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "as-oms-dir-"));
+      const accountsPath = join(dir, "accounts.json");
+      const providersPath = join(dir, "providers.json");
+      const statePath = join(dir, "state.json");
+      const projectDir = "/home/user/work/clementine";
+
+      const accountService = useAccountService(accountsPath, statePath);
+      await accountService.addAccount({
+        id: "current-codex",
+        label: "Current Codex",
+        provider: "openai-codex",
+        dirs: [projectDir],
+        env: { TEST_CODEX_KEY: { type: "literal" as const, value: "codex" } },
+      });
+      await accountService.addAccount({
+        id: "wrong-claude",
+        label: "Wrong Claude",
+        provider: "claude-bridge",
+        dirs: ["/home/user"],
+        env: { TEST_CLAUDE_KEY: { type: "literal" as const, value: "wrong" } },
+      });
+      await accountService.addAccount({
+        id: "right-claude",
+        label: "Right Claude",
+        provider: "claude-bridge",
+        dirs: [projectDir],
+        env: { TEST_CLAUDE_KEY: { type: "literal" as const, value: "right" } },
+      });
+
+      const pi = { registerProvider: vi.fn(), setModel: vi.fn().mockResolvedValue(true) };
+      const runtime = new AccountSwitcherRuntime(pi as never, {
+        accounts: accountsPath,
+        providers: providersPath,
+        state: statePath,
+      });
+      await runtime.load();
+      await runtime.activateAccount(runtime.findAccountById("current-codex")!, {
+        ...mockCtx({ cwd: projectDir }),
+        model: { provider: "openai-codex", id: "dummy" },
+      } as never);
+
+      await runtime.onModelSelect("claude-bridge", {
+        ...mockCtx({ cwd: `${projectDir}/packages/web` }),
+        model: { provider: "claude-bridge", id: "dummy" },
+      } as never);
+
+      expect(runtime.getActiveAccount()?.id).toBe("right-claude");
+    });
+
     it("does not switch when both accounts share the same provider", async () => {
       const dir = await mkdtemp(join(tmpdir(), "as-oms-"));
       const accountsPath = join(dir, "accounts.json");

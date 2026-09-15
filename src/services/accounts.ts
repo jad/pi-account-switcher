@@ -133,7 +133,7 @@ class AccountServiceImpl implements AccountService {
     } else {
       const resolved = await accountUtil.resolveAccountEnv(account);
       if (previous) await accountUtil.clearAccountEnv(previous, ctx.modelRegistry);
-      applied = accountUtil.applyResolvedAccountEnv(account, resolved, ctx.modelRegistry, authProvider);
+      applied = await accountUtil.applyResolvedAccountEnv(account, resolved, ctx.modelRegistry, authProvider);
     }
     this.activeAccountId = account.id;
     // Persist active account ID for subagent (cross-process) inheritance

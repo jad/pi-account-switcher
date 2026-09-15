@@ -27,7 +27,7 @@ describe("accountUtil", () => {
     }
   });
 
-  it("applies resolved env entries after successful resolution", () => {
+  it("applies resolved env entries after successful resolution", async () => {
     const authStorage = {
       setRuntimeApiKey: vi.fn(),
       removeRuntimeApiKey: vi.fn(),
@@ -35,7 +35,7 @@ describe("accountUtil", () => {
 
     const before = process.env.ACCOUNT_SWITCHER_TEST_KEY;
     try {
-      const applied = accountUtil.applyResolvedAccountEnv(
+      const applied = await accountUtil.applyResolvedAccountEnv(
         { id: "work", label: "Work", provider: "Claude" },
         [["ACCOUNT_SWITCHER_TEST_KEY", "new"]],
         { authStorage } as never,
@@ -48,6 +48,33 @@ describe("accountUtil", () => {
       if (before === undefined) delete process.env.ACCOUNT_SWITCHER_TEST_KEY;
       else process.env.ACCOUNT_SWITCHER_TEST_KEY = before;
     }
+  });
+
+  it("uses Pi's current model runtime API for runtime credentials", async () => {
+    const setRuntimeApiKey = vi.fn().mockResolvedValue(undefined);
+    const applied = await accountUtil.applyResolvedAccountEnv(
+      { id: "work", label: "Work", provider: "Claude" },
+      [["ACCOUNT_SWITCHER_MODERN_KEY", "new"]],
+      { runtime: { setRuntimeApiKey } } as never,
+    );
+
+    expect(applied).toEqual(["ACCOUNT_SWITCHER_MODERN_KEY"]);
+    expect(setRuntimeApiKey).toHaveBeenCalledWith("anthropic", "new");
+    delete process.env.ACCOUNT_SWITCHER_MODERN_KEY;
+  });
+
+  it("uses Pi's current credential store for OAuth accounts", async () => {
+    const modify = vi.fn().mockImplementation(async (_provider, update) => update());
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const credential = { type: "oauth" as const, refresh: "refresh", access: "access", expires: 123 };
+
+    await accountUtil.applyAccountEnv(
+      { id: "work", label: "Work", provider: "openai-codex", piAuth: { provider: "openai-codex", entry: credential } },
+      { runtime: { credentials: { modify }, refresh } } as never,
+    );
+
+    expect(modify).toHaveBeenCalledWith("openai-codex", expect.any(Function));
+    expect(refresh).toHaveBeenCalledWith({ allowNetwork: false, providers: ["openai-codex"] });
   });
 });
 
@@ -121,6 +148,14 @@ describe("clearAccountEnv", () => {
     const removeRuntimeApiKey = vi.fn();
     await accountUtil.clearAccountEnv({ id: "a", label: "A", provider: "anthropic" }, {
       authStorage: { removeRuntimeApiKey },
+    } as never);
+    expect(removeRuntimeApiKey).toHaveBeenCalledWith("anthropic");
+  });
+
+  it("uses Pi's current model runtime API when clearing credentials", async () => {
+    const removeRuntimeApiKey = vi.fn().mockResolvedValue(undefined);
+    await accountUtil.clearAccountEnv({ id: "a", label: "A", provider: "anthropic" }, {
+      runtime: { removeRuntimeApiKey },
     } as never);
     expect(removeRuntimeApiKey).toHaveBeenCalledWith("anthropic");
   });

@@ -133,7 +133,10 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
       return;
     }
 
-    const matchingAccount = this.findAccountsByProvider(provider)[0];
+    const matchingAccounts = this.findAccountsByProvider(provider);
+    const cwdMatchId = ctx.cwd ? findLongestMatchingDir(matchingAccounts, ctx.cwd) : undefined;
+    const matchingAccount =
+      (cwdMatchId ? matchingAccounts.find((account) => account.id === cwdMatchId) : undefined) ?? matchingAccounts[0];
     if (matchingAccount && matchingAccount.id !== activeAccount?.id) {
       await this.activateAccount(matchingAccount, ctx);
     }

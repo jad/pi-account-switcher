@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { AccountConfig, SecretSource } from "../types";
+import type { AccountConfig, PiAuthEntry, SecretSource } from "../types";
 import { commonUtil } from "./common";
 import { fileUtil } from "./files";
 import { providerUtil } from "./providers";
@@ -15,7 +15,7 @@ export const accountUtil = {
         delete process.env[envName];
       }
     }
-    modelRegistry?.authStorage.removeRuntimeApiKey(authProvider);
+    await removeRuntimeApiKey(modelRegistry, authProvider);
   },
 
   applyAccountEnv: async (
@@ -25,8 +25,7 @@ export const accountUtil = {
   ): Promise<string[]> => {
     if (account.piAuth) {
       const authProvider = authProviderOverride ?? account.piAuth.provider;
-      modelRegistry?.authStorage.set(authProvider, account.piAuth.entry);
-      modelRegistry?.authStorage.reload();
+      await setStoredCredential(modelRegistry, authProvider, account.piAuth.entry);
       closeCachedSessions();
       return [];
     }
@@ -47,12 +46,12 @@ export const accountUtil = {
     return resolvedEntries;
   },
 
-  applyResolvedAccountEnv: (
+  applyResolvedAccountEnv: async (
     account: AccountConfig,
     resolvedEntries: Array<[string, string]>,
     modelRegistry?: ModelRegistry,
     authProviderOverride?: string,
-  ): string[] => {
+  ): Promise<string[]> => {
     const authProvider = authProviderOverride ?? providerUtil.normalizeProvider(account.provider);
     const applied: string[] = [];
     for (const [envName, value] of resolvedEntries) {
@@ -61,8 +60,8 @@ export const accountUtil = {
     }
 
     const firstValue = resolvedEntries[0]?.[1];
-    if (firstValue) modelRegistry?.authStorage.setRuntimeApiKey(authProvider, firstValue);
-    else modelRegistry?.authStorage.removeRuntimeApiKey(authProvider);
+    if (firstValue) await setRuntimeApiKey(modelRegistry, authProvider, firstValue);
+    else await removeRuntimeApiKey(modelRegistry, authProvider);
 
     return applied;
   },
@@ -89,6 +88,77 @@ export const accountUtil = {
     }
   },
 };
+
+type LegacyAuthStorage = {
+  set(provider: string, credential: PiAuthEntry): void;
+  reload(): void;
+  setRuntimeApiKey(provider: string, apiKey: string): void;
+  removeRuntimeApiKey(provider: string): void;
+};
+
+type ModernCredentialStore = {
+  modify(provider: string, update: () => Promise<PiAuthEntry>): Promise<unknown>;
+};
+
+type ModernModelRuntime = {
+  credentials?: ModernCredentialStore;
+  refresh(options: { allowNetwork: boolean; providers: string[] }): Promise<unknown>;
+  setRuntimeApiKey(provider: string, apiKey: string): Promise<void>;
+  removeRuntimeApiKey(provider: string): Promise<void>;
+};
+
+type CompatibleModelRegistry = ModelRegistry & {
+  authStorage?: LegacyAuthStorage;
+  runtime?: ModernModelRuntime;
+};
+
+function compatibleRegistry(modelRegistry?: ModelRegistry): CompatibleModelRegistry | undefined {
+  return modelRegistry as CompatibleModelRegistry | undefined;
+}
+
+async function setStoredCredential(
+  modelRegistry: ModelRegistry | undefined,
+  provider: string,
+  credential: PiAuthEntry,
+): Promise<void> {
+  const registry = compatibleRegistry(modelRegistry);
+  if (!registry) return;
+
+  if (registry.authStorage) {
+    registry.authStorage.set(provider, credential);
+    registry.authStorage.reload();
+    return;
+  }
+
+  const runtime = registry.runtime;
+  if (!runtime?.credentials) {
+    throw new Error("This Pi version does not expose a compatible credential store");
+  }
+  await runtime.credentials.modify(provider, async () => credential);
+  await runtime.refresh({ allowNetwork: false, providers: [provider] });
+}
+
+async function setRuntimeApiKey(
+  modelRegistry: ModelRegistry | undefined,
+  provider: string,
+  apiKey: string,
+): Promise<void> {
+  const registry = compatibleRegistry(modelRegistry);
+  if (registry?.authStorage) {
+    registry.authStorage.setRuntimeApiKey(provider, apiKey);
+    return;
+  }
+  await registry?.runtime?.setRuntimeApiKey(provider, apiKey);
+}
+
+async function removeRuntimeApiKey(modelRegistry: ModelRegistry | undefined, provider: string): Promise<void> {
+  const registry = compatibleRegistry(modelRegistry);
+  if (registry?.authStorage) {
+    registry.authStorage.removeRuntimeApiKey(provider);
+    return;
+  }
+  await registry?.runtime?.removeRuntimeApiKey(provider);
+}
 
 function normalizeDir(dir: string): string {
   return dir.replace(/\/$/, "");
