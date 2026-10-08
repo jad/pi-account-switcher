@@ -49,9 +49,10 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
   }
 
   /** Find the account whose dirs contain the longest prefix of cwd. */
-  private findAccountForCwd(cwd: string | undefined): AccountConfig | undefined {
+  private findAccountForCwd(cwd: string | undefined, provider?: string): AccountConfig | undefined {
     if (!cwd) return undefined;
-    const id = findLongestMatchingDir(this.accountService.getAccounts(), cwd);
+    const accounts = provider ? this.findAccountsByProvider(provider) : this.accountService.getAccounts();
+    const id = findLongestMatchingDir(accounts, cwd);
     return id ? this.accountService.getAccounts().find((a) => a.id === id) : undefined;
   }
 
@@ -92,7 +93,7 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
     }
     if (!selected) {
       // Step 2: CWD-based auto-select via dirs
-      selected = this.findAccountForCwd(ctx.cwd);
+      selected = this.findAccountForCwd(ctx.cwd, ctx.model?.provider);
     }
     if (!selected) {
       // Step 3: defaultAccountId from config

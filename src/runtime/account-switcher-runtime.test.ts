@@ -7,7 +7,7 @@ import { useAccountService } from "../services";
 import type { AccountSwitcherContext } from "../types";
 
 /** Build a minimal mock of AccountSwitcherContext for testing init(). */
-function mockCtx(overrides: { cwd?: string; sessionFile?: string }): AccountSwitcherContext {
+function mockCtx(overrides: { cwd?: string; sessionFile?: string; modelProvider?: string }): AccountSwitcherContext {
   const authStorage = {
     set: () => {},
     reload: () => {},
@@ -29,7 +29,7 @@ function mockCtx(overrides: { cwd?: string; sessionFile?: string }): AccountSwit
       onTerminalInput: () => () => {},
     } as any,
     modelRegistry: { authStorage, find: () => undefined } as any,
-    model: undefined,
+    model: overrides.modelProvider ? ({ provider: overrides.modelProvider, id: "test" } as any) : undefined,
     sessionManager:
       overrides.sessionFile !== undefined ? ({ getSessionFile: () => overrides.sessionFile } as any) : undefined,
   } as any;
@@ -104,6 +104,36 @@ describe("AccountSwitcherRuntime", () => {
       await runtime.init(ctx);
 
       expect(runtime.getActiveAccount()?.id).toBe("personal");
+    });
+
+    it("limits startup directory matching to the active provider", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "runtime-cascade-"));
+      const accPath = join(dir, "accounts.json");
+      const provPath = join(dir, "providers.json");
+      const statePath = join(dir, "state.json");
+
+      const setup = useAccountService(accPath, statePath);
+      await setup.addAccount({
+        id: "codex-work",
+        label: "Codex Work",
+        provider: "openai-codex",
+        dirs: ["/home/user/my-project"],
+        piAuth: { provider: "openai-codex", entry: { type: "api_key", key: "sk-codex" } },
+      });
+      await setup.addAccount({
+        id: "claude-work",
+        label: "Claude Work",
+        provider: "claude-bridge",
+        dirs: ["/home/user/my-project"],
+        env: { CLAUDE_CONFIG_DIR: { type: "literal", value: "/home/user/.claude-work" } },
+      });
+
+      const pi = { registerProvider: () => {}, setModel: async () => true };
+      const runtime = new AccountSwitcherRuntime(pi, { accounts: accPath, providers: provPath, state: statePath });
+      const ctx = mockCtx({ cwd: "/home/user/my-project", modelProvider: "claude-bridge" });
+      await runtime.init(ctx);
+
+      expect(runtime.getActiveAccount()?.id).toBe("claude-work");
     });
 
     it("falls back to defaultAccountId when no session state and no dir match", async () => {
