@@ -33,6 +33,10 @@ export const COMMANDS = {
       name: "accounts:dirs",
       description: "Manage working directories for CWD-based auto-select",
     },
+    repos: {
+      name: "accounts:repos",
+      description: "Manage Git repositories for checkout and worktree auto-select",
+    },
   },
   providers: {
     add: {

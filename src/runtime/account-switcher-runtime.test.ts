@@ -1,4 +1,5 @@
-import { mkdtemp } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { describe, expect, it, beforeAll, afterEach, vi } from "vitest";
@@ -134,6 +135,38 @@ describe("AccountSwitcherRuntime", () => {
       await runtime.init(ctx);
 
       expect(runtime.getActiveAccount()?.id).toBe("claude-work");
+    });
+
+    it("prefers a repository rule over a broad directory rule", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "runtime-repo-"));
+      const repo = join(dir, "repo");
+      await mkdir(repo);
+      execFileSync("git", ["init", "-q", repo]);
+      const accPath = join(dir, "accounts.json");
+      const provPath = join(dir, "providers.json");
+      const statePath = join(dir, "state.json");
+
+      const setup = useAccountService(accPath, statePath);
+      await setup.addAccount({
+        id: "default-claude",
+        label: "Default Claude",
+        provider: "claude-bridge",
+        dirs: ["/"],
+        env: { CLAUDE_CONFIG_DIR: { type: "literal", value: "/home/user/.claude" } },
+      });
+      await setup.addAccount({
+        id: "repo-claude",
+        label: "Repo Claude",
+        provider: "claude-bridge",
+        repos: [repo],
+        env: { CLAUDE_CONFIG_DIR: { type: "literal", value: "/home/user/.claude-work" } },
+      });
+
+      const pi = { registerProvider: () => {}, setModel: async () => true };
+      const runtime = new AccountSwitcherRuntime(pi, { accounts: accPath, providers: provPath, state: statePath });
+      await runtime.init(mockCtx({ cwd: repo, modelProvider: "claude-bridge" }));
+
+      expect(runtime.getActiveAccount()?.id).toBe("repo-claude");
     });
 
     it("falls back to defaultAccountId when no session state and no dir match", async () => {

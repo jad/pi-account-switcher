@@ -1,5 +1,7 @@
-import { exec, execFile } from "node:child_process";
+import { exec, execFile, execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
+import { basename, dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
@@ -104,13 +106,53 @@ export function findLongestMatchingDir<T extends { id: string; dirs?: string[] }
     const dirs = account.dirs;
     if (!dirs || dirs.length === 0) continue;
     for (const dir of dirs) {
-      const resolved = dir.startsWith("~") ? dir.replace("~", homedir()) : dir;
-      const normalized = resolved.replace(/\/+$/, "");
-      if ((cwd === normalized || cwd.startsWith(normalized + "/")) && normalized.length > bestLen) {
+      const normalized = normalizeLocalPath(dir);
+      const matches = normalized === "/" ? cwd.startsWith("/") : cwd === normalized || cwd.startsWith(normalized + "/");
+      if (matches && normalized.length > bestLen) {
         bestLen = normalized.length;
         bestId = account.id;
       }
     }
   }
   return bestId;
+}
+
+/** Return the primary checkout root shared by a Git repository and its linked worktrees. */
+export function findGitRepositoryRoot(cwd: string): string | undefined {
+  try {
+    const commonDir = execFileSync("git", ["-C", cwd, "rev-parse", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!commonDir) return undefined;
+    const absolute = resolve(cwd, commonDir);
+    return normalizeExistingPath(basename(absolute) === ".git" ? dirname(absolute) : absolute);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Match an account by exact Git repository root. First-in-array wins on ties. */
+export function findMatchingRepo<T extends { id: string; repos?: string[] }>(
+  accounts: T[],
+  repositoryRoot: string,
+): string | undefined {
+  const normalizedRoot = normalizeExistingPath(repositoryRoot);
+  return accounts.find((account) => account.repos?.some((repo) => normalizeExistingPath(repo) === normalizedRoot))?.id;
+}
+
+function normalizeLocalPath(path: string): string {
+  const expanded = path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path;
+  const normalized = resolve(expanded);
+  return normalized === "/" ? normalized : normalized.replace(/\/+$/, "");
+}
+
+function normalizeExistingPath(path: string): string {
+  const normalized = normalizeLocalPath(path);
+  try {
+    return realpathSync.native(normalized);
+  } catch {
+    // A configured repository may be temporarily absent.
+    return normalized;
+  }
 }

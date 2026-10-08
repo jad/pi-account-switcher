@@ -366,9 +366,9 @@ Alternative manual config flow: edit `~/.pi/account-switcher/accounts.json` dire
    /reload
    ```
 
-## 11. Directory-based Auto-Select
+## 11. Repository and Directory Auto-Select
 
-The extension can automatically activate the right account based on your current working directory.
+The extension can automatically activate the right account based on the current Git repository or working directory. Repository rules take precedence over directory rules.
 
 ### `dirs` on accounts
 
@@ -386,6 +386,24 @@ Add directory paths to an account in `accounts.json`. The longest matching prefi
 }
 ```
 
+### `repos` on accounts
+
+Add primary Git checkout roots to an account. A repository rule matches the checkout and every linked worktree because the extension resolves Git's common directory.
+
+```json
+{
+  "id": "claude-work",
+  "label": "Claude — Work",
+  "provider": "anthropic",
+  "repos": ["~/Development/work-app"],
+  "env": {
+    "ANTHROPIC_API_KEY": { "type": "env", "name": "ANTHROPIC_WORK_API_KEY" }
+  }
+}
+```
+
+Run `/accounts:repos` from any checkout or linked worktree to save its primary repository root to the active account, or choose another account and add/remove repository rules.
+
 ### `defaultAccountId` config fallback
 
 If no session state exists and no directory matches, the extension falls back to `defaultAccountId` at the top of `accounts.json`:
@@ -401,15 +419,16 @@ If no session state exists and no directory matches, the extension falls back to
 ### Activation cascade (session start)
 
 1. **Saved session state** — account previously selected for this Pi session
-2. **CWD-based auto-select** — longest matching directory prefix
-3. **`defaultAccountId`** — config-level fallback
-4. **None** — no account activated until you pick one
+2. **Repository auto-select** — exact Git common-root match, including linked worktrees
+3. **CWD-based auto-select** — longest matching directory prefix
+4. **`defaultAccountId`** — config-level fallback
+5. **None** — no account activated until you pick one
 
 ### Manage dirs with `/accounts:dirs`
 
 The `/accounts:dirs` command opens an interactive wizard. When an active account and current working directory are detected, it offers **Auto-save** (one-step: saves current dir to active account) and **Manual** (pick account, then add via recursive directory browser or remove configured dirs).
 
-Dirs are stored per account in `~/.pi/account-switcher/accounts.json`.
+Dirs and repository roots are stored per account in `~/.pi/account-switcher/accounts.json`.
 
 ---
 

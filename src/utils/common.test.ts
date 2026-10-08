@@ -1,5 +1,9 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { commonUtil, findLongestMatchingDir, providerUtil } from "../utils";
+import { commonUtil, findGitRepositoryRoot, findLongestMatchingDir, findMatchingRepo, providerUtil } from "../utils";
 
 const customProviders = [{ id: "acme", aliases: ["acme-ai"], envKeys: ["ACME_API_KEY"] }];
 
@@ -34,6 +38,11 @@ describe("providerUtil", () => {
         { id: "long", label: "Long", dirs: ["/home/user/Development"] },
       ];
       expect(findLongestMatchingDir(accounts as any, "/home/user/Development/Work/project")).toBe("long");
+    });
+
+    it("uses the filesystem root as a fallback", () => {
+      const accounts = [{ id: "fallback", label: "Fallback", dirs: ["/"] }];
+      expect(findLongestMatchingDir(accounts, "/home/user/project")).toBe("fallback");
     });
 
     it("returns first-in-array on tie (same dir length)", () => {
@@ -91,6 +100,41 @@ describe("providerUtil", () => {
       const accounts = [{ id: "returns-id", label: "Returns", dirs: ["/home/user"] }];
       expect(typeof findLongestMatchingDir(accounts as any, "/home/user/file")).toBe("string");
       expect(findLongestMatchingDir(accounts as any, "/home/user/file")).toBe("returns-id");
+    });
+  });
+
+  describe("repository matching", () => {
+    it("matches configured roots exactly and expands home", () => {
+      const accounts = [
+        { id: "home", repos: ["~/src/project"] },
+        { id: "other", repos: ["/tmp/other"] },
+      ];
+      expect(findMatchingRepo(accounts, join(homedir(), "src/project"))).toBe("home");
+      expect(findMatchingRepo(accounts, join(homedir(), "src/project-copy"))).toBeUndefined();
+    });
+
+    it("returns the primary checkout for a linked worktree", () => {
+      const base = mkdtempSync(join(tmpdir(), "account-switcher-repo-"));
+      const repo = join(base, "repo");
+      const worktree = join(base, "worktree");
+      try {
+        mkdirSync(repo);
+        execFileSync("git", ["init", "-q", repo]);
+        execFileSync("git", ["-C", repo, "config", "user.email", "test@example.com"]);
+        execFileSync("git", ["-C", repo, "config", "user.name", "Test"]);
+        writeFileSync(join(repo, "README.md"), "test\n");
+        execFileSync("git", ["-C", repo, "add", "README.md"]);
+        execFileSync("git", ["-C", repo, "commit", "-qm", "initial"]);
+        execFileSync("git", ["-C", repo, "worktree", "add", "-qb", "test-worktree", worktree]);
+
+        expect(findGitRepositoryRoot(worktree)).toBe(realpathSync.native(repo));
+      } finally {
+        rmSync(base, { recursive: true, force: true });
+      }
+    });
+
+    it("returns undefined outside a Git repository", () => {
+      expect(findGitRepositoryRoot(tmpdir())).toBeUndefined();
     });
   });
 });

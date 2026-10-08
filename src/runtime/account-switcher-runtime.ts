@@ -6,7 +6,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AccountConfig, AccountSwitcherContext, PiAuthEntry, ProviderConfig } from "../types";
 import type { AccountService, ModelService, PiAuthService, ProviderService } from "../services";
 import { useAccountService, useModelService, usePiAuthService, useProviderService } from "../services";
-import { accountUtil, findLongestMatchingDir, modelUtil, providerUtil, uiUtil } from "../utils";
+import {
+  accountUtil,
+  findGitRepositoryRoot,
+  findLongestMatchingDir,
+  findMatchingRepo,
+  modelUtil,
+  providerUtil,
+  uiUtil,
+} from "../utils";
 
 function resolveAuthProvider(account: AccountConfig, providers: ProviderConfig[]): string {
   if (account.piAuth?.provider) return account.piAuth.provider;
@@ -48,6 +56,16 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
     return "default";
   }
 
+  /** Find the account whose repo list contains cwd's Git repository. */
+  private findAccountForRepo(cwd: string | undefined, provider?: string): AccountConfig | undefined {
+    if (!cwd) return undefined;
+    const repositoryRoot = findGitRepositoryRoot(cwd);
+    if (!repositoryRoot) return undefined;
+    const accounts = provider ? this.findAccountsByProvider(provider) : this.accountService.getAccounts();
+    const id = findMatchingRepo(accounts, repositoryRoot);
+    return id ? this.accountService.getAccounts().find((a) => a.id === id) : undefined;
+  }
+
   /** Find the account whose dirs contain the longest prefix of cwd. */
   private findAccountForCwd(cwd: string | undefined, provider?: string): AccountConfig | undefined {
     if (!cwd) return undefined;
@@ -68,8 +86,9 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
     // Cascade:
     // 0. PI_ACCOUNT_SWITCHER_ACTIVE_ID env var (from parent process)
     // 1. Session key state (handled inside accountService.load())
-    // 2. CWD-based auto-select via dirs
-    // 3. defaultAccountId from config
+    // 2. Git repository auto-select via repos
+    // 3. CWD-based auto-select via dirs
+    // 4. defaultAccountId from config
     let selected: AccountConfig | undefined;
 
     // Step 0: env var from parent process (for subagent inheritance)
@@ -92,11 +111,15 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
       selected = this.accountService.getActiveAccount();
     }
     if (!selected) {
-      // Step 2: CWD-based auto-select via dirs
+      // Step 2: repository auto-select (one rule covers the checkout and linked worktrees)
+      selected = this.findAccountForRepo(ctx.cwd, ctx.model?.provider);
+    }
+    if (!selected) {
+      // Step 3: CWD-based auto-select via dirs
       selected = this.findAccountForCwd(ctx.cwd, ctx.model?.provider);
     }
     if (!selected) {
-      // Step 3: defaultAccountId from config
+      // Step 4: defaultAccountId from config
       const defaultId = await this.accountService.getDefaultAccountId();
       if (defaultId) {
         selected = this.accountService.getAccounts().find((a) => a.id === defaultId);
@@ -135,9 +158,12 @@ export default class AccountSwitcherRuntime implements AccountSwitcher {
     }
 
     const matchingAccounts = this.findAccountsByProvider(provider);
+    const repositoryRoot = ctx.cwd ? findGitRepositoryRoot(ctx.cwd) : undefined;
+    const repoMatchId = repositoryRoot ? findMatchingRepo(matchingAccounts, repositoryRoot) : undefined;
     const cwdMatchId = ctx.cwd ? findLongestMatchingDir(matchingAccounts, ctx.cwd) : undefined;
+    const matchId = repoMatchId ?? cwdMatchId;
     const matchingAccount =
-      (cwdMatchId ? matchingAccounts.find((account) => account.id === cwdMatchId) : undefined) ?? matchingAccounts[0];
+      (matchId ? matchingAccounts.find((account) => account.id === matchId) : undefined) ?? matchingAccounts[0];
     if (matchingAccount && matchingAccount.id !== activeAccount?.id) {
       await this.activateAccount(matchingAccount, ctx);
     }

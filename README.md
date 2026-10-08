@@ -74,6 +74,7 @@ The local commands will be registered as `/dev:accounts:list`, `/dev:accounts:ad
 | `/accounts:remove`   | Delete an account                                               |
 | `/accounts:oauth`    | Import the current Pi `/login` OAuth session as a named account |
 | `/accounts:dirs`     | Manage working directories for CWD-based auto-select            |
+| `/accounts:repos`    | Manage Git repositories for checkout/worktree auto-select       |
 
 ### Providers
 
@@ -141,9 +142,9 @@ OAuth credentials are read from `~/.pi/agent/auth.json` and written back to Pi's
 
 ---
 
-## Directory-based Auto-Select
+## Repository and Directory Auto-Select
 
-The extension can automatically activate the right account based on your current working directory. Each account can list directory paths (`dirs`) — the longest prefix match wins. A `defaultAccountId` at the config level serves as the fallback. Use `/accounts:dirs` to manage directories interactively.
+The extension can automatically activate the right account based on the current Git repository (`repos`) or working directory (`dirs`). Repository rules match both the primary checkout and its linked worktrees and take precedence over directory rules; the longest directory prefix wins otherwise. A `defaultAccountId` at the config level serves as the fallback. Use `/accounts:repos` and `/accounts:dirs` to manage the rules interactively.
 
 See **USAGE.md** for full details on the activation cascade, configuration, and examples.
 

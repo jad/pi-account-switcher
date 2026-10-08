@@ -31,6 +31,7 @@ export const accountSchema = z
     providerApiKey: secretSourceSchema.optional(),
     usesProviderApiKey: z.boolean().optional(),
     dirs: z.array(z.string()).optional(),
+    repos: z.array(z.string()).optional(),
     piAuth: z
       .object({
         provider: z.string().min(1),

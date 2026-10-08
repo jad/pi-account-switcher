@@ -31,6 +31,8 @@ export interface AccountConfig {
   model?: string;
   /** Directories where this account should be the default (CWD-based auto-select). */
   dirs?: string[];
+  /** Git repository roots where this account should be the default, including linked worktrees. */
+  repos?: string[];
   /** Captured Pi /login credentials for built-in OAuth/subscription providers. */
   piAuth?: {
     provider: ProviderId;

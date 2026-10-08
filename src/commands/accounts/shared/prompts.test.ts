@@ -89,4 +89,17 @@ describe("AccountConfigBuilder", () => {
       expect(builder["config"].piAuth).toEqual({ provider: "anthropic", entry: mockEntry });
     });
   });
+
+  it("preserves directory and repository rules when editing an account", () => {
+    const builder = new AccountConfigBuilder(mockUi(), [], [], undefined, {
+      id: "work",
+      label: "Work",
+      provider: "anthropic",
+      dirs: ["/workspace"],
+      repos: ["~/src/project"],
+      env: { ANTHROPIC_API_KEY: { type: "env", name: "ANTHROPIC_API_KEY" } },
+    });
+
+    expect(builder.build()).toMatchObject({ dirs: ["/workspace"], repos: ["~/src/project"] });
+  });
 });

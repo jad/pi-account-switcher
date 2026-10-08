@@ -181,6 +181,8 @@ export class AccountConfigBuilder {
       label,
       provider,
       ...(this.config.model ? { model: this.config.model } : {}),
+      ...(this.config.dirs ? { dirs: this.config.dirs } : {}),
+      ...(this.config.repos ? { repos: this.config.repos } : {}),
       ...(this.config.env ? { env: this.config.env } : {}),
       ...(this.config.providerApiKey ? { providerApiKey: this.config.providerApiKey } : {}),
       ...(this.config.usesProviderApiKey ? { usesProviderApiKey: true } : {}),
